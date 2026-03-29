@@ -9,9 +9,11 @@ from rasterio.features import rasterize
 from rasterio.windows import Window
 from shapely.geometry import box
 from tqdm import tqdm
+import cv2
 
 TILE_SIZE = 512
-STRIDE = 384
+CROP_SIZE = 1024  # Increased for more zoom out as requested
+STRIDE = 768  # Adjusted for larger crop size
 MIN_FOREGROUND_RATIO = 0.01
 CLASS_BG = 0
 CLASS_ROAD = 1
@@ -30,15 +32,15 @@ RAILWAY_KEYS = ["railway"]
 
 DATASETS = [
     {
-        "tif_dir": Path(r"E:\CG\tifs"),
-        "shp_dir": r"E:\CG\shp-file",
-        "out_dir": r"E:\dataset_6_classes\train",
+        "tif_dir": Path(r"D:\geo-dataste\CG\tifs"),
+        "shp_dir": r"D:\geo-dataste\CG\shp-file",
+        "out_dir": r"D:\geo-dataste\zoomed_out_1024_updated\train",
         "prefix": "CG"
     },
     {
-        "tif_dir": Path(r"E:\PB_training_dataSet_shp_file\PB_training_dataSet_shp_file\tifs"),
-        "shp_dir": r"E:\PB_training_dataSet_shp_file\PB_training_dataSet_shp_file\shp-file",
-        "out_dir": r"E:\dataset_6_classes\train",
+        "tif_dir": Path(r"D:\geo-dataste\PB_training_dataSet_shp_file\tifs"),
+        "shp_dir": r"D:\geo-dataste\PB_training_dataSet_shp_file\shp-file",
+        "out_dir": r"D:\geo-dataste\zoomed_out_1024_updated\train",
         "prefix": "PB"
     }
 ]
@@ -120,16 +122,16 @@ def tile_and_save(tif_path, geoms_map, out_dir, prefix):
         railway = geoms_map["railway"]
 
         tid = 0
-        for y in tqdm(range(0, H - TILE_SIZE + 1, STRIDE)):
-            for x in range(0, W - TILE_SIZE + 1, STRIDE):
+        for y in tqdm(range(0, H - CROP_SIZE + 1, STRIDE)):
+            for x in range(0, W - CROP_SIZE + 1, STRIDE):
 
-                window = Window(x, y, TILE_SIZE, TILE_SIZE)
+                window = Window(x, y, CROP_SIZE, CROP_SIZE)
                 win_transform = src.window_transform(window)
                 win_bounds = src.window_bounds(window)
                 win_box = box(*win_bounds)
 
                 # Rasterize tile mask
-                mask_t = np.zeros((TILE_SIZE, TILE_SIZE), dtype=np.uint8)
+                mask_t = np.zeros((CROP_SIZE, CROP_SIZE), dtype=np.uint8)
 
                 # Water
                 if not water.empty:
@@ -137,7 +139,7 @@ def tile_and_save(tif_path, geoms_map, out_dir, prefix):
                     if not hit.empty:
                         rasterize(
                             [(g, CLASS_WATER) for g in hit.geometry],
-                            out_shape=(TILE_SIZE, TILE_SIZE),
+                            out_shape=(CROP_SIZE, CROP_SIZE),
                             transform=win_transform,
                             out=mask_t
                         )
@@ -148,7 +150,7 @@ def tile_and_save(tif_path, geoms_map, out_dir, prefix):
                     if not hit.empty:
                         rasterize(
                             [(g, CLASS_BUILT) for g in hit.geometry],
-                            out_shape=(TILE_SIZE, TILE_SIZE),
+                            out_shape=(CROP_SIZE, CROP_SIZE),
                             transform=win_transform,
                             out=mask_t
                         )
@@ -159,7 +161,7 @@ def tile_and_save(tif_path, geoms_map, out_dir, prefix):
                     if not hit.empty:
                         rasterize(
                             [(g, CLASS_BRIDGE) for g in hit.geometry],
-                            out_shape=(TILE_SIZE, TILE_SIZE),
+                            out_shape=(CROP_SIZE, CROP_SIZE),
                             transform=win_transform,
                             out=mask_t
                         )
@@ -170,7 +172,7 @@ def tile_and_save(tif_path, geoms_map, out_dir, prefix):
                     if not hit.empty:
                         rasterize(
                             [(g, CLASS_RAILWAY) for g in hit.geometry],
-                            out_shape=(TILE_SIZE, TILE_SIZE),
+                            out_shape=(CROP_SIZE, CROP_SIZE),
                             transform=win_transform,
                             out=mask_t
                         )
@@ -181,11 +183,14 @@ def tile_and_save(tif_path, geoms_map, out_dir, prefix):
                     if not hit.empty:
                         rasterize(
                             [(g, CLASS_ROAD) for g in hit.geometry],
-                            out_shape=(TILE_SIZE, TILE_SIZE),
+                            out_shape=(CROP_SIZE, CROP_SIZE),
                             transform=win_transform,
                             all_touched=True,
                             out=mask_t
                         )
+
+                # Resize mask to TILE_SIZE
+                mask_t = cv2.resize(mask_t, (TILE_SIZE, TILE_SIZE), interpolation=cv2.INTER_NEAREST)
 
                 fg_ratio = (mask_t > 0).sum() / (TILE_SIZE * TILE_SIZE)
                 if fg_ratio < MIN_FOREGROUND_RATIO:
@@ -197,6 +202,9 @@ def tile_and_save(tif_path, geoms_map, out_dir, prefix):
                 # The user asked about channels, all have 4 (RGBA). Usually we take RGB.
                 if img_t.shape[0] == 4:
                     img_t = img_t[:3, ...]
+
+                # Resize image to TILE_SIZE
+                img_t = cv2.resize(img_t.transpose(1, 2, 0), (TILE_SIZE, TILE_SIZE), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
 
                 np.save(out_img / f"{prefix}_{tid:06d}.npy", img_t)
                 np.save(out_mask / f"{prefix}_{tid:06d}.npy", mask_t)

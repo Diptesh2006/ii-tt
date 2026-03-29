@@ -1,2 +1,7 @@
 *.pth
 __pycache__/
+*.tif
+*.xml
+results/
+*.png
+*.jpg

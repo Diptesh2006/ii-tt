@@ -1,0 +1,16 @@
+torch
+torchvision
+torchaudio
+streamlit
+transformers
+rasterio
+opencv-python
+numpy
+pandas
+plotly
+Pillow
+leafmap
+folium
+matplotlib
+scikit-learn
+tqdm
